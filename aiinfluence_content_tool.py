@@ -684,8 +684,6 @@ async function submitForm(e) {
   var url = getApiPath();
   if (state.editingId) {
     url += '/' + encodeURIComponent(state.editingId);
-  } else if (state.tab !== 'events' && data.id) {
-    url += '/' + encodeURIComponent(data.id);
   }
 
   try {
