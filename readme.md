@@ -1,4 +1,4 @@
-# Event Editor - AI Diplomacy
+# Event Editor - AI Influence
 
 A local web tool for authoring **secrets**, **world info**, and **event seeds** for the Mount & Blade II: Bannerlord *AI Influence (AI Diplomacy)* mod, without hand-editing JSON save files.
 
