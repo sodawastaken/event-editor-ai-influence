@@ -2,6 +2,25 @@
 
 A local web tool for authoring **secrets**, **world info**, and **event seeds** for the Mount & Blade II: Bannerlord *AI Influence (AI Diplomacy)* mod, without hand-editing JSON save files.
 
+## About the AI Influence mod
+AI Influence gives every lord, companion, and notable in Bannerlord an LLM-driven personality: they hold real conversations, remember what you've told them, gossip and form opinions, and can start conversations with you on their own initiative. Kingdoms conduct AI-generated diplomacy (war/peace, trade deals, tribute, reparations, kingdom statements), and the world periodically generates its own news-style events (political intrigue, wars, economic shifts, social scandals, disease outbreaks) — all written by the AI, woven into ongoing storylines over time.
+
+This tool lets you seed that simulation with your own ideas instead of leaving everything to chance:
+- **Secrets** — a hidden fact a specific NPC (or NPC type) might know and could reveal if you build enough trust or catch them off guard.
+- **World Info** — general knowledge any qualifying NPC might bring up naturally in conversation.
+- **Events** — a story idea you want the world's own AI event generator to weave into a real, AI-written world event.
+
+### Example ideas
+- *Secret:* "The court physician has been poisoning the old duke slowly, on the queen's orders." (`applicableNPCs: companions`, high access level)
+- *Secret:* "Lord X is secretly the bastard child of the rival kingdom's ruler." (`applicableNPCs: lords`)
+- *World Info:* "A famine in the eastern villages has driven up grain prices; merchants are profiteering." (general knowledge, any NPC)
+- *World Info:* "Rumors of a sea monster sighted off the northern coast are spreading among sailors and villagers."
+- *Event seed:* "Two rival merchant guilds are caught smuggling weapons to bandit camps — a scandal that threatens to topple the city council."
+- *Event seed:* "A forbidden romance between a Vlandian lady and an Aserai lord becomes public, scandalizing both courts."
+- *Event seed:* "A cult claiming descent from the old Calradian Empire begins recruiting disillusioned nobles."
+
+Mix and match: plant a Secret about an affair, add World Info about the families' rivalry, then seed an Event about the scandal breaking — and let the mod's AI turn it into an evolving storyline.
+
 ## Requirements
 - Python 3.9+ (stdlib only — no `pip install` needed)
 - The AI Influence mod installed and run at least once, so its save data folder exists
@@ -12,6 +31,19 @@ A local web tool for authoring **secrets**, **world info**, and **event seeds** 
 2. Place `aiinfluence_content_tool.py` anywhere on disk — it doesn't need to live inside the game or mod folder.
 3. That's it. There's nothing to build or install; the script is self-contained.
 
+## Configuring your data folder path
+The tool needs to know where the AI Influence mod stores its save data (the folder that contains a `save_data` subfolder — typically `...\overwrite\AIInfluence`).
+
+The first time you run the script, it creates a `data_path.txt` file next to it with a placeholder. **Open `data_path.txt` in any text editor**, replace the placeholder line with your real path, save, and restart the tool. No code editing required. `data_path.example.txt` shows the expected format.
+
+If `data_path.txt` is missing or still has the placeholder, the tool will print a warning on startup telling you to edit it.
+
+(Advanced/optional) Setting the `AIINFLUENCE_DATA` environment variable overrides `data_path.txt` entirely, e.g.:
+```
+$env:AIINFLUENCE_DATA = "D:\Games\Bannerlord\overwrite\AIInfluence"
+python aiinfluence_content_tool.py
+```
+
 ## Running the tool
 From a terminal, in the folder containing the script:
 ```
@@ -21,16 +53,8 @@ This starts a local server (default `http://127.0.0.1:8765`, auto-picking the ne
 
 Stop the server with `Ctrl+C` in the terminal.
 
-### Configuration (optional environment variables)
-- `AIINFLUENCE_DATA` — path to the mod's data folder, if it's not at the default location:
-  `C:\Users\<you>\AppData\Local\ModOrganizer\Mount & Blade II Bannerlord\overwrite\AIInfluence`
+### Other configuration (optional environment variable)
 - `AIINFLUENCE_PORT` — preferred port (default `8765`)
-
-Example (PowerShell):
-```
-$env:AIINFLUENCE_DATA = "D:\Games\Bannerlord\overwrite\AIInfluence"
-python aiinfluence_content_tool.py
-```
 
 ## Using the tool
 

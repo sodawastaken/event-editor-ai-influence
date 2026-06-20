@@ -11,10 +11,32 @@ from datetime import datetime
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
-DATA_BASE = os.environ.get(
-    "AIINFLUENCE_DATA",
-    r"C:\Users\kaane\AppData\Local\ModOrganizer\Mount & Blade II Bannerlord\overwrite\AIInfluence",
+DATA_PATH_CONFIG_FILE = Path(__file__).resolve().parent / "data_path.txt"
+DATA_PATH_PLACEHOLDER = r"C:\Users\<username>\AppData\Local\ModOrganizer\Mount & Blade II Bannerlord\overwrite\AIInfluence"
+DATA_PATH_TEMPLATE = (
+    "# Paste the full path to your AIInfluence data folder below this line, then save this file\n"
+    "# and restart the tool. This is the folder that contains the 'save_data' subfolder.\n"
+    "# Example: C:\\Users\\YourName\\AppData\\Local\\ModOrganizer\\Mount & Blade II Bannerlord\\overwrite\\AIInfluence\n"
+    f"{DATA_PATH_PLACEHOLDER}\n"
 )
+
+
+def load_data_path():
+    """Reads the data folder path from data_path.txt (created with a placeholder on first run if missing),
+    so non-technical users can configure this by editing a plain text file instead of the script."""
+    env_value = os.environ.get("AIINFLUENCE_DATA")
+    if env_value:
+        return env_value
+    if not DATA_PATH_CONFIG_FILE.exists():
+        DATA_PATH_CONFIG_FILE.write_text(DATA_PATH_TEMPLATE, encoding="utf-8")
+    for line in DATA_PATH_CONFIG_FILE.read_text(encoding="utf-8-sig").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#"):
+            return line
+    return DATA_PATH_PLACEHOLDER
+
+
+DATA_BASE = load_data_path()
 PORT = int(os.environ.get("AIINFLUENCE_PORT", "8765"))
 HOST = "127.0.0.1"
 
@@ -947,6 +969,8 @@ def main():
     url = f"http://{HOST}:{actual_port}"
     print(f"AI Influence Content Tool running at {url}")
     print(f"Data directory: {DATA_BASE}")
+    if DATA_BASE == DATA_PATH_PLACEHOLDER:
+        print(f"  ^ This is a placeholder! Edit {DATA_PATH_CONFIG_FILE} with your real AIInfluence data folder path.")
     print("Press Ctrl+C to stop.")
     try:
         server.serve_forever()
