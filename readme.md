@@ -34,7 +34,9 @@ Mix and match: plant a Secret about an affair, add World Info about the families
 ## Configuring your data folder path
 The tool needs to know where the AI Influence mod stores its save data (the folder that contains a `save_data` subfolder — typically `...\overwrite\AIInfluence`).
 
-The first time you run the script, it creates a `data_path.txt` file next to it with a placeholder. **Open `data_path.txt` in any text editor**, replace the placeholder line with your real path, save, and restart the tool. No code editing required. `data_path.example.txt` shows the expected format.
+The first time you run the script, it creates a `data_path.txt` file next to it with a placeholder — **this is the only file the tool actually reads**, so just run it once, then open the auto-created `data_path.txt` in any text editor, replace the placeholder line with your real path, save, and restart the tool. No code editing, no renaming anything required.
+
+(`data_path.example.txt` is not read by the script at all — it's only there so the expected format is visible on GitHub without having to run the tool first. Editing it does nothing.)
 
 If `data_path.txt` is missing or still has the placeholder, the tool will print a warning on startup telling you to edit it.
 
