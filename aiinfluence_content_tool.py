@@ -20,7 +20,8 @@ HOST = "127.0.0.1"
 
 NPC_TYPES = ["all", "lords", "companions", "faction_leaders"]
 ACCESS_LEVELS = ["low", "medium", "high"]
-EVENT_SEED_CATEGORY = "event_seed"
+SEEDS_BLOCK_START = "=== USER EVENT SEEDS (managed by AI Influence Content Tool — edits here will be overwritten) ==="
+SEEDS_BLOCK_END = "=== END USER EVENT SEEDS ==="
 
 
 def find_free_port(start=8765):
@@ -39,6 +40,16 @@ def read_json(path):
 def write_json(path, data):
     with open(path, "w", encoding="utf-8") as f:
         json.dump(data, f, indent=2, ensure_ascii=False)
+
+
+def read_text(path):
+    with open(path, "r", encoding="utf-8-sig") as f:
+        return f.read()
+
+
+def write_text(path, content):
+    with open(path, "w", encoding="utf-8-sig", newline="\r\n") as f:
+        f.write(content)
 
 
 def backup_file(path):
@@ -69,6 +80,14 @@ def get_secrets_path(campaign_id):
 
 def get_info_path(campaign_id):
     return Path(DATA_BASE) / "save_data" / campaign_id / "prompts" / "world_data" / "world_info.json"
+
+
+def get_event_seeds_path(campaign_id):
+    return Path(DATA_BASE) / "save_data" / campaign_id / "prompts" / "world_data" / "event_seeds.json"
+
+
+def get_world_lore_path(campaign_id):
+    return Path(DATA_BASE) / "save_data" / campaign_id / "prompts" / "world_data" / "world.txt"
 
 
 def validate_secret(entry, existing, skip_id=None):
@@ -117,18 +136,42 @@ def validate_info(entry, existing, skip_id=None):
     return errors
 
 
-def build_event_seed(entry, existing_id=None):
-    """Combine the seed form's title+description into the single description field world_info.json expects."""
-    title = entry.get("title", "").strip()
-    description = entry.get("description", "").strip()
-    combined = f"{title}: {description}" if title and description else (title or description)
-    return {
-        "id": existing_id or str(uuid.uuid4()),
-        "description": combined,
-        "usageChance": entry.get("usageChance", 25),
-        "applicableNPCs": entry.get("applicableNPCs", ["all"]),
-        "category": EVENT_SEED_CATEGORY,
-    }
+def validate_event_seed(entry):
+    errors = []
+    if not entry.get("title", "").strip() and not entry.get("description", "").strip():
+        errors.append("title or description is required")
+    return errors
+
+
+def sync_seeds_to_world_txt(campaign_id, seeds):
+    """Rewrite the seeds block in world.txt — the file actually read into the dynamic event generator's
+    prompt (NOT world_info.json, which only feeds per-NPC conversation knowledge)."""
+    path = get_world_lore_path(campaign_id)
+    try:
+        text = read_text(path) if path.exists() else ""
+    except Exception:
+        text = ""
+
+    start_idx = text.find(SEEDS_BLOCK_START)
+    if start_idx != -1:
+        text = text[:start_idx].rstrip("\r\n ")
+    else:
+        text = text.rstrip("\r\n ")
+
+    if seeds:
+        lines = [SEEDS_BLOCK_START]
+        for i, s in enumerate(seeds):
+            title = s.get("title", "").strip()
+            description = s.get("description", "").strip()
+            line = f"{title}: {description}" if title and description else (title or description)
+            marker = "  [MOST RECENT — use this one]" if i == len(seeds) - 1 else ""
+            lines.append(f"- {line}{marker}")
+        lines.append(SEEDS_BLOCK_END)
+        block = "\n".join(lines)
+        text = (text + "\n\n" + block + "\n") if text else (block + "\n")
+
+    backup_file(path)
+    write_text(path, text)
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):
@@ -182,9 +225,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 if content_type == "secrets":
                     data = read_json(get_secrets_path(campaign_id))
                 elif content_type == "info":
-                    data = [e for e in read_json(get_info_path(campaign_id)) if e.get("category") != EVENT_SEED_CATEGORY]
+                    data = read_json(get_info_path(campaign_id))
                 elif content_type == "events":
-                    data = [e for e in read_json(get_info_path(campaign_id)) if e.get("category") == EVENT_SEED_CATEGORY]
+                    filepath = get_event_seeds_path(campaign_id)
+                    data = read_json(filepath) if filepath.exists() else []
                 self.send_json(data)
             except FileNotFoundError:
                 self.send_json({"error": "campaign or file not found"}, 404)
@@ -243,16 +287,21 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "entry": entry})
 
             elif content_type == "events":
-                filepath = get_info_path(campaign_id)
+                filepath = get_event_seeds_path(campaign_id)
                 existing = read_json(filepath) if filepath.exists() else []
-                seed_entry = build_event_seed(entry)
-                errors = validate_info(seed_entry, existing)
+                errors = validate_event_seed(entry)
                 if errors:
                     self.send_json({"errors": errors}, 400)
                     return
+                seed_entry = {
+                    "id": str(uuid.uuid4()),
+                    "title": entry.get("title", "").strip(),
+                    "description": entry.get("description", "").strip(),
+                }
                 backup_file(filepath)
                 existing.append(seed_entry)
                 write_json(filepath, existing)
+                sync_seeds_to_world_txt(campaign_id, existing)
                 self.send_json({"ok": True, "entry": seed_entry})
 
         except FileNotFoundError:
@@ -320,20 +369,25 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "entry": entry})
 
             elif content_type == "events":
-                filepath = get_info_path(campaign_id)
+                filepath = get_event_seeds_path(campaign_id)
                 existing = read_json(filepath)
                 idx = next((i for i, e in enumerate(existing) if e["id"] == entry_id), None)
                 if idx is None:
                     self.send_json({"error": f"entry '{entry_id}' not found"}, 404)
                     return
-                seed_entry = build_event_seed(entry, existing_id=entry_id)
-                errors = validate_info(seed_entry, existing, skip_id=entry_id)
+                errors = validate_event_seed(entry)
                 if errors:
                     self.send_json({"errors": errors}, 400)
                     return
+                seed_entry = {
+                    "id": entry_id,
+                    "title": entry.get("title", "").strip(),
+                    "description": entry.get("description", "").strip(),
+                }
                 backup_file(filepath)
                 existing[idx] = seed_entry
                 write_json(filepath, existing)
+                sync_seeds_to_world_txt(campaign_id, existing)
                 self.send_json({"ok": True, "entry": seed_entry})
 
         except FileNotFoundError:
@@ -384,7 +438,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 self.send_json({"ok": True})
 
             elif content_type == "events":
-                filepath = get_info_path(campaign_id)
+                filepath = get_event_seeds_path(campaign_id)
                 existing = read_json(filepath)
                 idx = next((i for i, e in enumerate(existing) if e["id"] == entry_id), None)
                 if idx is None:
@@ -393,6 +447,7 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                 backup_file(filepath)
                 del existing[idx]
                 write_json(filepath, existing)
+                sync_seeds_to_world_txt(campaign_id, existing)
                 self.send_json({"ok": True})
 
         except FileNotFoundError:
@@ -652,11 +707,8 @@ function renderEntry(e, i) {
     var uuidShort = (e.id || '').substring(0, 8);
     return '<div class="entry-card">'
       + '<div class="entry-id"><span title="' + he(e.id) + '">' + uuidShort + '...</span></div>'
-      + '<div class="entry-desc">' + he(e.description) + '</div>'
-      + '<div class="entry-meta">'
-      + '<span>Chance: ' + e.usageChance + '%</span>'
-      + '<span>NPCs: ' + (e.applicableNPCs||[]).join(', ') + '</span>'
-      + '</div>' + actions + '</div>';
+      + '<div class="entry-desc"><strong>' + he(e.title) + '</strong>' + (e.title && e.description ? ': ' : '') + he(e.description) + '</div>'
+      + actions + '</div>';
   }
 }
 
@@ -697,7 +749,7 @@ async function submitForm(e) {
       feedback.className = 'feedback success';
       var msg = state.editingId ? 'Updated successfully!' : 'Added successfully!';
       if (state.tab === 'events' && !state.editingId) {
-        msg += ' It\'s now visible to the mod\'s AI. Open MCM in-game and click "Force Generate Event Now" to turn it into a real event immediately, or it\'ll be picked up on the next automatic generation cycle.';
+        msg += ' Added to world.txt, which the event generator reads. Open MCM in-game and click "Force Generate Event Now" to try turning it into a real event immediately, or wait for the next automatic generation cycle.';
       }
       feedback.textContent = msg;
       state.editingId = null;
@@ -722,7 +774,7 @@ function clientValidate(data) {
     errs.push('description required');
   }
   if (state.tab === 'secrets' && (data.knowledgeChance < 0 || data.knowledgeChance > 100)) errs.push('knowledgeChance 0-100');
-  if ((state.tab === 'info' || state.tab === 'events') && (data.usageChance < 0 || data.usageChance > 100)) errs.push('usageChance 0-100');
+  if (state.tab === 'info' && (data.usageChance < 0 || data.usageChance > 100)) errs.push('usageChance 0-100');
   return errs;
 }
 
@@ -760,8 +812,6 @@ function collectEventData() {
   return {
     title: f.querySelector('[name="title"]').value.trim(),
     description: f.querySelector('[name="description"]').value.trim(),
-    usageChance: parseInt(f.querySelector('[name="usageChance"]').value),
-    applicableNPCs: getCheckedNPCs(f),
   };
 }
 
@@ -840,19 +890,10 @@ function renderForm() {
     html += '<div class="form-group"><label>Category</label><input name="category" required value="' + cat + '" placeholder="world"></div>';
 
   } else if (state.tab === 'events') {
-    var title = '';
-    var desc = editData ? (editData.description || '') : '';
-    var sepIdx = desc.indexOf(': ');
-    if (isEdit && sepIdx > -1 && sepIdx < 80) {
-      title = he(desc.substring(0, sepIdx));
-      desc = desc.substring(sepIdx + 2);
-    }
-    desc = he(desc);
-    var uc = editData ? editData.usageChance : 25;
+    var title = editData ? he(editData.title) : '';
+    var desc = editData ? he(editData.description) : '';
     html += '<div class="form-group"><label>Title</label><input name="title" value="' + title + '" placeholder="e.g. Northern Empire faces grain shortage"></div>';
     html += '<div class="form-group"><label>Description</label><textarea name="description">' + desc + '</textarea></div>';
-    html += '<div class="form-group"><label>Usage Chance (0-100)</label><input name="usageChance" type="number" value="' + uc + '" min="0" max="100"></div>';
-    html += buildNPCGroup(editData ? editData.applicableNPCs : null);
   }
 
   html += '<button type="submit" class="btn">' + submitLabel + '</button>' + cancelHtml;

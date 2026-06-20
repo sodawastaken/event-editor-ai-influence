@@ -44,31 +44,36 @@ Author hidden facts NPCs may know about. Fields: unique ID, description, knowled
 Author general world-knowledge facts NPCs can reference in conversation. Fields: unique ID, description, usage chance (0-100%), applicable NPC types, and a category label. Also hot-reloaded — no restart needed.
 
 ### Events tab
-Add a **seed idea** (title + description) for something you want to happen in the world — e.g. "Northern Empire faces grain shortage." This does **not** create a finished event directly. Instead it's written into the mod's world-info data so the mod's own AI can pick it up.
+Add a **seed idea** (title + description) for something you want to happen in the world — e.g. "Northern Empire faces grain shortage." This does **not** create a finished event directly. Instead it's appended into `prompts/world_data/world.txt` — the actual lore document the mod's dynamic event generator reads on every generation (see below for how this was figured out; an earlier version of this tool wrote seeds into `world_info.json` instead, which turned out to never reach the event generator's prompt at all).
 
 To make it become a real event:
 - Open the in-game MCM settings for AI Influence and click **"Force Generate Event Now"** to generate one immediately, or
-- Just wait — the mod automatically generates new events on its own schedule (every `DynamicEventsInterval` days, default 7), and your seed will be available as context for that generation.
+- Just wait — the mod automatically generates new events on its own schedule (every `DynamicEventsInterval` days, default 7).
 
-Set usage chance and applicable NPC types the same way as the World Info tab. **Important caveat** (found by decompiling the mod, see below): the chance value is *not* a guarantee or even a code-enforced probability — it's just text the AI sees. By default the AI is told to pick its event topic from current kingdom wars/political tension (or from recent dialogue), not from your seeds, so a 100%-chance seed can still be ignored. See "Making seeds actually influence event topics" below to fix that.
+There's still no guarantee — see below for why — but unlike the old approach, the seed is now actually visible to the generator.
 
 ### Editing and deleting
 Every entry in the "Existing" list has **Edit** and **Delete** buttons. Edits and deletes write a `.bak` backup of the file before saving, so you can always recover the previous version by renaming the `.bak` file back.
 
 ## How dynamic event generation actually works (and how to make seeds matter)
-This was reverse-engineered by decompiling `AIInfluence.dll` (it has unusual/obfuscated metadata — standard tools like ILSpy fail with "Illegal tables in compressed metadata stream"; `dnlib`-based tooling reads it fine even though local identifiers are renamed to invisible Unicode characters; public API names and string literals survive).
+This was reverse-engineered by decompiling `AIInfluence.dll` (it has unusual/obfuscated metadata — standard tools like ILSpy fail with "Illegal tables in compressed metadata stream"; `dnlib`-based tooling reads it fine even though local identifiers are renamed to invisible Unicode characters; public API names and string literals survive), then **confirmed by reading the literal prompt text the mod logs to `logs/dynamicEvents.log` on every generation** — the log records the exact prompt sent to the LLM, which is the most reliable source of truth here.
 
 Findings:
-- `WorldInfoManager.ReadWorldInfo()` reads `world_info.json` **verbatim** and substitutes it into the prompt via a `{world_info}` placeholder. There is **no code-level probability filter** — every entry's `usageChance` is just text the LLM sees, not a dice roll the C# code performs.
-- That placeholder is only used for "what does this world feel like" scene-setting (`DynamicEventsGeneratorStaticRules.txt`: *"You operate in the world of `{world_info}`. Create events that fit this world's setting and atmosphere."*) — not as a topic source.
-- The actual topic instruction comes from a separate, hardcoded task file. In **World State mode** (`DynamicEventsGeneratorWorldStateDataTask.txt`), the default text is: *"Create EXACTLY 1 event based on current kingdom relations, wars, or political tension."* In **Dialogue mode** (`DynamicEventsGeneratorDialogueDataTask.txt`), events come only from recent NPC conversations. Neither mode is told to look at your World Info seeds for its topic — so even a 100%-chance seed can be (and usually is) ignored if there's any active war/political tension to write about instead.
+- `world_info.json` (and `world_secrets.json`) entries are **only** used for per-NPC conversation knowledge — each NPC has a chance (`usageChance`/`knowledgeChance`, `applicableNPCs`) of "knowing" a fact and bringing it up if you talk to them. They are **never included in the Dynamic Events Generator's prompt at all.** An earlier version of this tool (and an earlier version of this doc) assumed seeds written there would feed event generation — confirmed wrong by inspecting the actual logged prompt, which contained no trace of `world_info.json` content.
+- The `{world_info}` placeholder in `DynamicEventsGeneratorStaticRules.txt` (*"You operate in the world of `{world_info}`..."*) is substituted from a **different file**: `prompts/world_data/world.txt`, a free-form lore document (kingdoms, geography, daily life, custom additions). This is the only per-campaign text that actually reaches the event generator's prompt as "world info."
+- There is no code-level probability filter anywhere in this pipeline — any "chance" field is just text the LLM sees, never a dice roll the C# code performs.
+- The actual instruction for *what topic* to write about is a separate, hardcoded task file. In **World State mode** (`DynamicEventsGeneratorWorldStateDataTask.txt`), default text: *"Create EXACTLY 1 event based on current kingdom relations, wars, or political tension."* In **Dialogue mode** (`DynamicEventsGeneratorDialogueDataTask.txt`), events come only from recent NPC conversations. Neither mode is told to use `world.txt` content as its topic by default — it's framed purely as scene-setting/atmosphere.
 
-**The fix:** these prompt files are plain text, live per-campaign under `prompts/dynamic_events_generator/` and `prompts/rules/`, and are hot-reloaded like the JSON data files. Edit `DynamicEventsGeneratorWorldStateDataTask.txt` to explicitly tell the generator to prioritize World Info seeds, e.g.:
-```
-TASK: Create EXACTLY 1 event. Prioritize any specific seed ideas described in the WORLD INFO section above if present; otherwise base it on current kingdom relations, wars, or political tension.
-Choose the most interesting aspect of the current world state.
-```
-This file needs editing **per campaign** (`save_data\<campaign_id>\prompts\dynamic_events_generator\DynamicEventsGeneratorWorldStateDataTask.txt`) since each campaign gets its own copy of the default templates. Keep the original UTF-8 BOM + CRLF encoding when hand-editing (Notepad and most editors do this automatically; PowerShell's `Set-Content` does not by default — use `[System.IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding $true))` if scripting it).
+**The fix this tool applies:** the Events tab appends seed ideas directly into `world.txt` (under a clearly delimited `=== USER EVENT SEEDS ===` block it manages — your own hand-written lore above that block is left untouched), and tags the most recently added one `[MOST RECENT — use this one]` so prompt instructions have something concrete to point at. Three per-campaign prompt files under `prompts/dynamic_events_generator/` were edited to push compliance as high as possible:
+- `DynamicEventsGeneratorWorldStateDataTask.txt` — *"You MUST base this event on the LAST entry listed in the USER EVENT SEEDS section above... Only if that section is completely absent should you fall back to kingdom relations/wars/political tension."*
+- `DynamicEventsGeneratorMandatoryRules.txt` — added as the **first** mandatory rule (most prominent position): *"...the event you generate MUST be about its entry marked 'MOST RECENT'. This overrides every other topic consideration."*
+- `DynamicEventsGeneratorFinalInstructionWorldState.txt` — the literal last line before generation (highest-recency LLM attention): *"...your event MUST be based on its 'MOST RECENT' entry — this is non-negotiable."*
+
+**This is still not a hard guarantee** — it's the strongest instruction wording achievable while staying inside the AI-driven generator, but compliance ultimately depends on the LLM actually following it, not code. A true guarantee would require bypassing the AI and writing a complete event straight into `aiinfluence_campaign_diplomacy.json` yourself (skips the AI's narrative elaboration, requires a game restart since that file isn't hot-reloaded). After clicking "Force Generate Event Now", check `logs/dynamicEvents.log` (search `PROMPT SENT TO AI:`) to see exactly what the model was shown and whether the generated event actually matches your seed.
+
+Keep the original UTF-8 BOM + CRLF encoding when hand-editing prompt `.txt` files (Notepad does this automatically; PowerShell's `Set-Content` does not by default — use `[System.IO.File]::WriteAllText($path, $content, (New-Object System.Text.UTF8Encoding $true))`).
+
+**Note:** if you used an earlier version of this tool, any seed you added before this fix is sitting in `world_info.json` tagged `category: "event_seed"` — it's harmless there (it now just behaves as a normal World Info fact NPCs may know and mention in conversation) but won't influence event generation. Re-add it via the Events tab if you want it to actually reach the generator.
 
 ## Notes
 - All changes are written directly to the campaign's save files. Close any other tool that might also be writing to the same files at the same time.
