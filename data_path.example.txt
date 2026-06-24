@@ -1,4 +1,4 @@
 # Paste the full path to your AIInfluence data folder below this line, then save this file
 # and restart the tool. This is the folder that contains the 'save_data' subfolder.
-# Example: C:\Users\YourName\AppData\Local\ModOrganizer\Mount & Blade II Bannerlord\overwrite\AIInfluence
-C:\Users\<username>\AppData\Local\ModOrganizer\Mount & Blade II Bannerlord\overwrite\AIInfluence
+# Example: C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\AIInfluence
+C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\AIInfluence

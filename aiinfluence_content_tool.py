@@ -12,11 +12,11 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 DATA_PATH_CONFIG_FILE = Path(__file__).resolve().parent / "data_path.txt"
-DATA_PATH_PLACEHOLDER = r"C:\Users\<username>\AppData\Local\ModOrganizer\Mount & Blade II Bannerlord\overwrite\AIInfluence"
+DATA_PATH_PLACEHOLDER = r"C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\AIInfluence"
 DATA_PATH_TEMPLATE = (
     "# Paste the full path to your AIInfluence data folder below this line, then save this file\n"
     "# and restart the tool. This is the folder that contains the 'save_data' subfolder.\n"
-    "# Example: C:\\Users\\YourName\\AppData\\Local\\ModOrganizer\\Mount & Blade II Bannerlord\\overwrite\\AIInfluence\n"
+    "# Example: C:\\Program Files (x86)\\Steam\\steamapps\\common\\Mount & Blade II Bannerlord\\Modules\\AIInfluence\n"
     f"{DATA_PATH_PLACEHOLDER}\n"
 )
 
@@ -165,6 +165,59 @@ def validate_event_seed(entry):
     return errors
 
 
+def patch_event_generator_prompts(campaign_id):
+    """Apply seed-priority instructions to the three dynamic-events-generator prompt files.
+    Idempotent — skips any file already containing the patch marker."""
+    prompt_dir = Path(DATA_BASE) / "save_data" / campaign_id / "prompts" / "dynamic_events_generator"
+    if not prompt_dir.exists():
+        return
+    marker = "USER EVENT SEEDS"
+
+    task_path = prompt_dir / "DynamicEventsGeneratorWorldStateDataTask.txt"
+    if task_path.exists():
+        text = read_text(task_path)
+        if marker not in text:
+            patched = text.replace(
+                "TASK: Create EXACTLY 1 event based on current kingdom relations, wars, or political tension.\n"
+                "Choose the most interesting aspect of the current world state.",
+                "TASK: If the world lore above includes a USER EVENT SEEDS section, you MUST base this event on"
+                " the entry marked [MOST RECENT — use this one]. Only if that section is completely absent"
+                " should you fall back to creating an event based on current kingdom relations, wars, or"
+                " political tension.\nChoose the most interesting aspect that supports or fits the seed.",
+            )
+            if patched != text:
+                backup_file(task_path)
+                write_text(task_path, patched)
+
+    rules_path = prompt_dir / "DynamicEventsGeneratorMandatoryRules.txt"
+    if rules_path.exists():
+        text = read_text(rules_path)
+        if marker not in text:
+            seed_rule = (
+                "- If the world lore contains a USER EVENT SEEDS section, the event you generate MUST be"
+                " directly about the entry marked [MOST RECENT — use this one]."
+                " This overrides every other topic consideration.\n"
+            )
+            patched = text.replace("### MANDATORY RULES:\n", "### MANDATORY RULES:\n" + seed_rule)
+            if patched != text:
+                backup_file(rules_path)
+                write_text(rules_path, patched)
+
+    final_path = prompt_dir / "DynamicEventsGeneratorFinalInstructionWorldState.txt"
+    if final_path.exists():
+        text = read_text(final_path)
+        if marker not in text:
+            patched = text.replace(
+                "Generate EXACTLY 1 event from world state NOW (JSON only):",
+                "Generate EXACTLY 1 event from world state NOW (JSON only)."
+                " If USER EVENT SEEDS are present in the world lore above, your event MUST be based on the"
+                " entry marked [MOST RECENT — use this one] — this is non-negotiable:",
+            )
+            if patched != text:
+                backup_file(final_path)
+                write_text(final_path, patched)
+
+
 def sync_seeds_to_world_txt(campaign_id, seeds):
     """Rewrite the seeds block in world.txt — the file actually read into the dynamic event generator's
     prompt (NOT world_info.json, which only feeds per-NPC conversation knowledge)."""
@@ -194,6 +247,7 @@ def sync_seeds_to_world_txt(campaign_id, seeds):
 
     backup_file(path)
     write_text(path, text)
+    patch_event_generator_prompts(campaign_id)
 
 
 class RequestHandler(http.server.BaseHTTPRequestHandler):

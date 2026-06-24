@@ -32,7 +32,7 @@ Mix and match: plant a Secret about an affair, add World Info about the families
 3. That's it. There's nothing to build or install; the script is self-contained.
 
 ## Configuring your data folder path
-The tool needs to know where the AI Influence mod stores its save data (the folder that contains a `save_data` subfolder — typically `...\overwrite\AIInfluence`).
+The tool needs to know where the AI Influence mod stores its save data (the folder that contains a `save_data` subfolder).
 
 The first time you run the script, it creates a `data_path.txt` file next to it with a placeholder — **this is the only file the tool actually reads**, so just run it once, then open the auto-created `data_path.txt` in any text editor, replace the placeholder line with your real path, save, and restart the tool. No code editing, no renaming anything required.
 
@@ -42,7 +42,7 @@ If `data_path.txt` is missing or still has the placeholder, the tool will print 
 
 (Advanced/optional) Setting the `AIINFLUENCE_DATA` environment variable overrides `data_path.txt` entirely, e.g.:
 ```
-$env:AIINFLUENCE_DATA = "D:\Games\Bannerlord\overwrite\AIInfluence"
+$env:AIINFLUENCE_DATA = "C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\AIInfluence"
 python aiinfluence_content_tool.py
 ```
 
@@ -90,7 +90,7 @@ Findings:
 - There is no code-level probability filter anywhere in this pipeline — any "chance" field is just text the LLM sees, never a dice roll the C# code performs.
 - The actual instruction for *what topic* to write about is a separate, hardcoded task file. In **World State mode** (`DynamicEventsGeneratorWorldStateDataTask.txt`), default text: *"Create EXACTLY 1 event based on current kingdom relations, wars, or political tension."* In **Dialogue mode** (`DynamicEventsGeneratorDialogueDataTask.txt`), events come only from recent NPC conversations. Neither mode is told to use `world.txt` content as its topic by default — it's framed purely as scene-setting/atmosphere.
 
-**The fix this tool applies:** the Events tab appends seed ideas directly into `world.txt` (under a clearly delimited `=== USER EVENT SEEDS ===` block it manages — your own hand-written lore above that block is left untouched), and tags the most recently added one `[MOST RECENT — use this one]` so prompt instructions have something concrete to point at. Three per-campaign prompt files under `prompts/dynamic_events_generator/` were edited to push compliance as high as possible:
+**The fix this tool applies:** the Events tab appends seed ideas directly into `world.txt` (under a clearly delimited `=== USER EVENT SEEDS ===` block it manages — your own hand-written lore above that block is left untouched), and tags the most recently added one `[MOST RECENT — use this one]` so prompt instructions have something concrete to point at. The first time you save a seed for a campaign, the tool also automatically patches three prompt files under `prompts/dynamic_events_generator/` to push compliance as high as possible (idempotent — already-patched files are skipped):
 - `DynamicEventsGeneratorWorldStateDataTask.txt` — *"You MUST base this event on the LAST entry listed in the USER EVENT SEEDS section above... Only if that section is completely absent should you fall back to kingdom relations/wars/political tension."*
 - `DynamicEventsGeneratorMandatoryRules.txt` — added as the **first** mandatory rule (most prominent position): *"...the event you generate MUST be about its entry marked 'MOST RECENT'. This overrides every other topic consideration."*
 - `DynamicEventsGeneratorFinalInstructionWorldState.txt` — the literal last line before generation (highest-recency LLM attention): *"...your event MUST be based on its 'MOST RECENT' entry — this is non-negotiable."*
