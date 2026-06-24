@@ -12,7 +12,7 @@ from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 
 DATA_PATH_CONFIG_FILE = Path(__file__).resolve().parent / "data_path.txt"
-DATA_PATH_PLACEHOLDER = r"C:\Program Files (x86)\Steam\steamapps\common\Mount & Blade II Bannerlord\Modules\AIInfluence"
+DATA_PATH_PLACEHOLDER = r"C:\Path\To\AIInfluence"
 DATA_PATH_TEMPLATE = (
     "# Paste the full path to your AIInfluence data folder below this line, then save this file\n"
     "# and restart the tool. This is the folder that contains the 'save_data' subfolder.\n"
